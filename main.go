@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -160,7 +161,43 @@ func AnalyzeRepositories(sess *core.Session) {
 					sess.Stats.UpdateProgress(sess.Stats.Repositories, len(sess.Repositories))
 					continue
 				}
-				sess.Out.Debug("[THREAD #%d][%s] Cloned repository to: %s\n", tid, *repo.FullName, path)
+				sess.Out.Important("[THREAD #%d][%s] Cloned repository to: %s\n", tid, *repo.FullName, path)
+
+				var mwsRegex = regexp.MustCompile(`password`)
+				// fileReaders := core.GetRepositoryFiles(clone)
+
+				files, err := core.FetchFiles(clone)
+				var matches int = 0
+				for filename, fileval := range files.Files {
+					matches = len(mwsRegex.FindAllString(fileval.Content(), -1))
+					if matches > 0 {
+						sess.Out.Important("%d matches found for file %s: \n", matches, filename)
+						finding := &core.Finding{
+							FilePath:        filename,
+							Action:          "Unknown",
+							Description:     "Test desc ",
+							Comment:         "Test comment",
+							RepositoryOwner: *repo.Owner,
+							RepositoryName:  *repo.Name,
+							CommitHash:      strconv.Itoa(matches),
+							CommitMessage:   "Test commit message",
+							CommitAuthor:    "Test author",
+						}
+						finding.Initialize()
+						sess.AddFinding(finding)
+					}
+				}
+
+				// for _, fileReader := range fileReaders {
+				// 	fileScanner := bufio.NewScanner(fileReader)
+				// 	var matches int = 0
+				// 	for fileScanner.Scan() {
+				// 		matches = matches + len(mwsRegex.FindString(fileScanner.Text()))
+				// 	}
+				// 	if matches > 0 {
+				// 		sess.Out.Important("%d matches found for file %s: ", matches)
+				// 	}
+				// }
 
 				history, err := core.GetRepositoryHistory(clone)
 				if err != nil {
@@ -180,6 +217,9 @@ func AnalyzeRepositories(sess *core.Session) {
 						changeAction := core.GetChangeAction(change)
 						path := core.GetChangePath(change)
 						matchFile := core.NewMatchFile(path)
+
+						sess.Out.Debug("PATH: %s\n", path)
+
 						if matchFile.IsSkippable() {
 							sess.Out.Debug("[THREAD #%d][%s] Skipping %s\n", tid, *repo.FullName, matchFile.Path)
 							continue
